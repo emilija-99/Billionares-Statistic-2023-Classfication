@@ -1,0 +1,1851 @@
+---
+title: "Seminarski rad - Billionaires 2023"
+author: "Emilija Ristić, Stefan Janićijević"
+date: "2023-12-14"
+output:
+  pdf_document: default
+  word_document: default
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(warn = -1)
+```
+
+# Uvod
+
+## Predstavljanje problema
+"Billionaires Statistic Dataset" predstavlja dragocen izvor informacija o krugu pojedinaca čije neto vrednosti imaju značajan uticaj na svetsku ekonomiju. Ovo istraživanje ima za cilj razumevanje podataka, fokusirajući se na demografske i ekonomske faktore koji nam mogu pomoći u klasifikaciji milijardera u određene grupe bogatstava.
+
+*Biblioteke koje ćemo koristiti u našoj analizi:
+```{r}
+library(knitr)
+library(tidyverse)
+library(dplyr)
+library(countrycode)
+library(wbstats)
+library(tools)
+library(stringdist)
+library(stringr)
+library(caret)
+library(pROC)
+library(rpart)
+library(rpart.plot)
+library(ROSE)
+library(randomForest) 
+```
+
+#Učitavanje skupa podataka
+
+```{r}
+dataset <- read.csv("Billionaires Statistics Dataset.csv")
+head(dataset, 5)
+```
+
+# Analiza skupa podataka
+U ovom koraku želimo da analiziramo naš skup podataka, odnosno "otkrijemo značenje u našim podacima".
+
+## Dimenzije
+```{r}
+broj_redova <- dim(dataset)[1]
+broj_kolona <- dim(dataset)[2]
+
+cat("Skup podataka Billionaires Statistics Dataset 2023 se sastoji iz", broj_redova, "redova i", broj_kolona, "kolona.")
+```
+
+## Kolone
+### Tipovi
+
+Sada želimo da prikažemo za svaku kolonu u našem skupu podataka o kom tipu je reč.
+Korišćenjem funkcije ***sapply(dataset, class)*** dobićemo informacije o tipovima podataka koji se vezuju za tu kolonu.
+
+```{r}
+tipovi <- sapply(dataset,class)
+tipovi_podataka_kolona <-data.frame(kolona = names(tipovi), tip = as.character(tipovi), stringsAsFactors = FALSE)
+
+kable(tipovi_podataka_kolona, caption="Informacije o tipovima podataka");
+```
+
+**Broj kolona po tipu podataka**
+```{r}
+count_tip <- table(tipovi)
+print(count_tip)
+```
+Od ukupno 31 kolone vidimo da se naš skup podataka sastoji iz 18 kolona koje se sastoje iz niza karaktera, 7 kolona celobrojnog tipa, 1 logičke kolone i 9 numeričkih kolona. 
+
+### Opis
+  Radi boljeg razumevanja svake kolone ispisaćemo njen naziv i značenje.
+  
+1. **rank** - Rangiranje milijardera po bogatstvu.
+2. **finalWorth** - Konačna neto vrednost milijardera u američkim dolarima.
+3. **category** - Kategorija ili industrija u kojoj posluje biznis milijardera.
+4. **personName** - Puno ime milijardera.
+5. **age** - Starost milijardera.
+6. **country** - Država u kojoj milijarder ima prebivalište.
+7. **city** - Grad u kojem milijarder ima prebivalište.
+8. **source** - Glavni izvor bogatstva milijardera, npr. kompanija, moda itd.
+9. **industries** - Različite industrije povezane sa poslovnim interesima milijardera.
+10. **countryOfCitizenship** - Zemlja državljanstva milijardera.
+11. **organization** - Naziv organizacije ili kompanije povezane sa milijarderom.
+12. **selfMade** - Označava da li je milijarder sam stekao bogatstvo (True) ili je nasledio bogatstvo                        (False).
+13. **status** - "D" predstavlja milijardere koji su sami stekli (osnivače/preduzetnike), a "U" označava                     nasleđeno bogatstvo.
+14. **gender** - Pol milijardera.
+15. **birthDate** - Datum rođenja milijardera.
+16. **lastName** - Prezime milijardera.
+17. **firstName** - Ime milijardera.
+18. **title** - Zvanje ili počasna titula koju milijarder može imati.
+19. **date** - Datum prikupljanja podataka.
+20. **state** - Država u kojoj milijarder živi.
+21. **residenceStateRegion** -  Specifičan region ili država gde se nalazi prebivalište milijardera.
+22. **birthYear** - Godina rođenja milijardera.
+23. **birthMonth** - Mesec rođenja milijardera.
+24. **birthDay** - Dan rođenja milijardera.
+25. **cpi_country** - Mera promene cena potrošačkih dobara i usluga u zemlji milijardera.
+26. **cpi_change_country** - Promena indeksa potrošačkih cena za zemlju milijardera.
+27. **gdp_country** - Bruto domaći proizvod (BDP) za zemlju milijardera.
+28. **gross_tertiary_education_enrollment** - Ukupan broj studenata upisanih na visoko obrazovanje u                                                     zemlji milijardera.
+29. **gross_primary_education_enrollment_country** - Ukupan broj đaka upisanih na osnovno obrazovanje u zemlji milijardera.
+30. **life_expectancy_country** - Očekivani životni vek u zemlji milijardera.
+31. **tax_revenue_country_country** - Ukupni prihodi od poreza u zemlji milijardera.
+32. **total_tax_rate_country** - Ukupna poreska stopa u zemlji milijardera.
+33. **population_country** - Broj stanovnika zemlje u kojoj milijarder živi.
+34. **latitude_country** - Koordinate geografske širine zemlje milijardera.
+35. **longitude_country** - Koordinate geografske dužine zemlje milijardera.
+
+# Priprema podataka
+U ovom poglavlju pozabavićemo se proverom našeg skupa podataka, duplikatima, validacijom podataka kao i detekcijom i popunjavanjem nedostajućih vrednosti.
+
+
+## Detekcija duplikata
+Za početak proveravamo da li naš skup podataka sadrži duplikate tako što ćemo iskoristiti funkciju **duplicated**.
+
+```{r}
+duplikati <- dataset[duplicated(dataset), ]
+print(duplikati)
+```
+Zaključujemo da u našem skupu podataka ne postoje duplikati, što sugeriše da su podaci u našem skupu jedinstveni.
+
+## Nedostajuće vrednosti
+
+Korišćenjem funkcije ***summary*** dobijamo statistički uvid o numeričkim i kategorijskim kolonama skupa podataka.
+
+Za numeričke vrednosti dobijamo informacije o minimalnoj, maksimalnoj vrednosti, prvi i treći kvantil, srednja vrednosti, medijana i standardna devijacija i u slučaju postojanja nedostajućih vrednosti dobijamo NA's koji predstavlja broj nedostajućih vrednosti za datu kolonu.
+
+Za karakteristične vrednosti kolona dobijamo dužinu, tip podataka i kojoj klasi pripada.
+
+U nastavku želimo da utvrdimo koje kolone sadrže nedostajuće vrednosti kako bismo primenili odgovarajuće metode za popunjavanje ili odbacivanje kolone u zavisnosti od procenta broja nedostajućih vrednosti i značajnosti te kolone.
+```{r}
+summary(dataset)
+```
+Da bismo prikazali nedostajuće vrednosti za kolone koje su tipa *character* potrebno je prazne stringove pretvoriti u "NA" vrednosti.
+
+```{r}
+zameni_prazan_string_sa_NA <- function(podaci) {
+  for (kolona in names(podaci)) {
+    if (is.character(podaci[[kolona]]) || is.factor(podaci[[kolona]])) {
+      podaci[[kolona]][podaci[[kolona]] %in% c("", " ")] <- NA
+    }
+  }
+  return(podaci)
+}
+
+dataset <- zameni_prazan_string_sa_NA(dataset)
+```
+
+Izvršićemo proveru kako bismo utvrdili koliko kolona u skupu podataka sadrže NA vrednosti.
+```{r}
+NA_col_count <- sum(colSums(is.na(dataset)) > 0)
+cat("Primećujemo da naš skup podataka sadrži",NA_col_count, "kolona koje imaju NA vrednosti.")
+```
+
+Prikazaćemo procentualni odnos ukupnog broja podataka i nedostajućih vrednosti za svaku kolonu putem grafika.
+
+```{r}
+tabela_NA <- dataset %>%
+  mutate(across(everything(), as.character)) %>%
+  pivot_longer(cols = everything(),names_to = "key", values_to = "value") %>%
+  mutate(isna = is.na(value)) %>%
+  group_by(key) %>%
+  mutate(ukupno = n()) %>%
+  group_by(key, ukupno, isna) %>%
+  summarise(num.isna = n()) %>%
+  mutate(procenat = num.isna / ukupno * 100)
+
+nazivi_kolona <- (tabela_NA  %>% filter(isna == T) %>%     
+                    arrange(desc(procenat)))$key
+
+grafik_NA <- tabela_NA %>%
+  filter(procenat < 100) %>%
+  ggplot(aes(x = reorder(key, desc(procenat)), 
+             y = procenat, fill=isna)) +
+  geom_bar(stat = 'identity', alpha=0.8) +
+  geom_text(aes(label = sprintf("%14.1f%%", procenat)),
+            data = subset(tabela_NA, isna == TRUE)) +
+  scale_fill_manual(name = "", 
+                    values = c('#00bfc4', '#f8766d'), 
+                    labels = c("Prisutno", "Nedostaje")) +
+  coord_flip() +
+  labs(title = "Procenat nedostajućih vrednosti po koloni", 
+       x = 'Naziv kolone', y = "% nedostajućih vrednosti")
+grafik_NA
+```
+
+Zaključujemo da se izdvajaju 4 kolone koje sadrže **više od 50%** nedostajućih vrednosti i one su: *title, state, residenceStateRegion, organization*. U nastavku ćemo razmotriti šta je najbolje uraditi sa njima, kao i sa svim ostalim kolonama koje sadrže nedostajuće vrednosti.
+
+## Irelevantne/nepotrebne vrednosti 
+
+Ako malo bolje pogledamo rezultat izvršavanja komande **summary** vidimo da su kolone **birthDate** i **gdp_country** tipa *character*. U nastavku bi ove dve kolone potencijalno napravile problem tako da ih je potrebno konvertovati u odgovarajuće tipove.
+
+```{r}
+dataset$gdp_country <- as.numeric(gsub("[^0-9.]", "", dataset$gdp_country))
+dataset$birthDate <- as.Date(strptime(dataset$birthDate, format = "%m/%d/%Y %H:%M"))
+```
+
+
+Kolone koje sa sigurnošću možemo izbrisati zbog velikog broja jedinstvenih vrednosti i koje ne utiču na predikciju neto vrednosti milijardera su:
+  
+  1. **rank** 
+  2. **personName** 
+  3. **lastName**
+  4. **firstName**
+  5. **date**
+  6. **birthMonth**
+  7. **birthDay**
+
+Zbog prisustva informacija o gradu i državi milijardera, uklanjanje kolona koje sadrže podatke o geografskoj dužini i širini države ima smisla.
+
+```{r}
+dataset <- dataset[, -which(names(dataset) %in% 
+                              c("rank","personName", "lastName", "firstName", "date",
+                                "birthMonth", "birthDay","latitude_country","longitude_country"))]
+```
+Kada govorimo o kolonama *state* i *residenceStateRegion* zaključujemo da one nisu od značaja za predviđanje neto vrednosti milijardera i zbog toga možemo odbaciti ove kolone. Razlog zbog kojeg brišemo ove kolone je taj što vrednosti postoje samo za milijardere koji su iz Amerike. Ove kolone bi bile korisne ukoliko bi klasifikaciju milijardera prema nivou bogatstva, a koji imaju državljanstvo ili prebivalište u Americi, što kod nas nije slučaj.
+
+Kolone *organization* i *title* imaju preko 87% nedostajućih vrednosti a razlozi za to mogu biti brojni. 
+Neki od njih su:
+  
+1. **Privatnost**: Milijarderi često žele očuvati svoju privatnost. Deljenje detaljnih informacija o svojim titulama ili unutrašnjim poslovnim pitanjima može dovesti do gubitka privatnosti i povećati nivo pažnje medija i javnosti. 
+2. **Sporazumi o poverljivosti**: Milijarderi i poslovni lideri često potpisuju sporazume o poverljivosti s drugim strankama, uključujući poslovne partnere i investitore. Ova poverljivost može ograničavati ono što mogu deliti javno.
+3. **Sigurnost**: Milijarderi se često suočavaju s povećanim rizicima od krađe identiteta, otmica ili drugih bezbednosnih pretnji. Održavanje određenih informacija u tajnosti može pomoći u zaštiti njihove lične bezbednosti.
+4. **Zaštita brenda**: Održavanje određenog nivoa misterije može biti deo strategije izgradnje brenda. Stvaranje interesovanja i intrigiranje javnosti može biti korisno za ugled i percepciju.
+
+Odlučili smo izuzeti kolone **state**, **residenceStateRegion**, **organization** i **title** iz dalje analize zbog njihove ograničene relevantnosti u klasifikaciji milijardera prema nivou bogatstva, uzimajući u obzir i visok procenat nedostajućih vrednosti. 
+
+```{r}
+dataset <- dataset[, -which(names(dataset) %in% c("state", "residenceStateRegion", "organization", "title"))]
+```
+
+Ako malo bolje pogledamo kolone **industries** i **category** su identične. Da bi to potvrdili iskoristićemo jedan mali trik. Predstavićemo obe kolone na istom grafiku i obojiti ih različitim bojama. Ukoliko se te dve boje "pomešaju" tj. dobijemo neku drugu boju smatraćemo da kolone imaju identične vrednosti. 
+```{r}
+ggplot( dataset, aes(x = industries, fill = "Kolona industries")) +
+  geom_bar(position = "stack", alpha = 0.7) +
+  geom_bar(aes(x = category, fill = "Kolona category"), position = "stack", alpha = 0.7) +
+  labs(title = "Provera jednakosti dve kolone",
+       x = "Naziv industrije",
+       y = "Broj redova") +
+  scale_fill_manual(values = c("Kolona industries" = "yellow", "Kolona category" = "red")) +
+  labs(fill = "") +
+  coord_flip()
+```
+Vidimo da smo dobili narandžastu boju što ukazuje na to da su vrednosti u kolonama identične. U nastavku možemo obrisati jednu od gore navedenih kolona. Obrisaćemo kolonu **category** jer smatramo da naziv kolone **industries** bolje opisuje same podatke.
+```{r}
+dataset <- dataset[, -which(colnames(dataset) == "category")]
+```
+
+```{r}
+length(unique(dataset$source))
+```
+Kolona **source** koja predstavlja glavni izvor bogatstva milijardera ima čak 906 različitih kategorija.
+
+```{r}
+head(dataset$source, 50)
+```
+Nakon detaljnog istraživanja kolone **source** dolazimo do sledećeg zaključka: 
+
+1. Kod nekih izvora razlika je u formatu ("Oil , Gas" , "Oil, Gas", "Oil and Gas")
+2. Postoje izvori koji ne pripadaju datoj kategoriji(Banking, Investments, Pipelines)
+3. U okviru jedne vrednosti navedeno je više različitih izvora (Oil, Banking, Telecom)
+4. Izvori se odnose na istu stvar ali su neki opisivani više neki manje (Liquefied Natural Gas, Natural Gas)
+5. Postoje izvori kojima je prvo početno slovo malo, a ostalim je veliko
+6. Javljaju se greške u kucanju (Eyeglases, Eyeglasses)
+7. Javljaju se različite pravopisne varijacije između britanskog i američkog engleskog jezika
+
+Zbog svih ovih problema kolona **source** će biti izuzeta iz dalje analize.
+
+```{r}
+dataset <- dataset[, -which(colnames(dataset) == "source")]
+```
+
+
+## Popunjavanje nedostajućih vrednosti
+
+#### Kolone **city** & **country**
+Popunjavanje nedostajućih vrednosti za kolone **city** i **country**.
+
+```{r}
+na_zemlja <- sum(is.na(dataset$country)) #38
+na_grad <- sum(is.na(dataset$city)) #72
+
+cat("Zaključujemo da imamo ",na_zemlja, " NA vrednosti koje se odnose na kolonu country ", na_grad," nedostajućih vrednosti za kolonu city.")
+```
+
+Pokušaćemo da na osnovu kolona **longitude_country**i **latitude_country** popunimo naziv države. Za početak proverićemo da li postoji država koja nema naziv a ima koordinate.
+```{r}
+na_lat_long <- which(is.na(dataset$country) & !(is.na(dataset$longitude_country & is.na(dataset$latitude_country))))
+length(na_lat_long)
+```
+Na osnovu dobijenog rezultata utvrđujemo da nije moguće popuniti naziv države uz pomoć koordinata.
+
+Sada želimo da posmatramo milijardere koji imaju isto prebivalište i državljanstvo i one kod kojih je to različito kako bismo utvrdili da li postoji povezanost koja bi nam pomogla u popunjavanju nedostajućih vrednosti za kolonu **country**.
+
+Ukoliko ne postoji naziv države(prebivalište) za određenog milijadera, a poznata je zemlja čije državljanstvo milijarder ima, pretpostavićemo da je milijarderu prebivalište zemlja čiji je državljanin.
+
+Prikazaćemo na grafiku odnos milijardera koji imaju isto državljanstvo i prebivalište i onih koji to nemaju kako bismo proverili da li naša pretpostavka važi.
+```{r}
+df <- dataset %>%
+  filter(!is.na(country)) %>%
+  transmute(country, countryOfCitizenship) %>%
+  mutate(rezultat = ifelse(country == countryOfCitizenship, TRUE, FALSE))
+
+procenti <- df %>%
+  group_by(rezultat) %>%
+  summarise(n = n()) %>%
+  mutate(procenat = n / sum(n) * 100)
+```
+
+```{r}
+ggplot(data = df) +
+  geom_bar(mapping = aes(x = rezultat, fill=rezultat)) +
+  labs( title = "Milijarderi sa istim prebivalistem i drzavljanstvom",
+        x = "Odnos u procentima",
+        y = "Broj slucajeva") +
+  guides(fill = guide_legend(title = "")) + 
+  geom_text(data = procenti, aes(x = factor(rezultat), y = n + 1, label = paste0(round(procenat), "%")),
+            position = position_dodge(width = 0.9), vjust = -0.5) +
+  scale_fill_manual(values = c("TRUE" = "#00bfc4", "FALSE" = "#f8766d"),
+                    breaks = c("TRUE", "FALSE"),
+                    labels = c("TRUE" = "Isto", "FALSE" = "Razlicito"))
+```
+
+Sa grafika jasno zaključujemo da procenat od **89%** ukazuje da većina milijarder ima isto državljanstvo i prebivalište i jasno podupire pretpostavku da milijarderi koji imaju državljanstvo jedne zemlje takođe i žive u njoj.
+
+Ispitaćemo koliki je procenat milijardera koji imaju prebivalište a nemaju državu.
+```{r}
+country_NA <- which(is.na(dataset$country))
+countryOfCitizenship_country_NA <- which(is.na(dataset$country) & !is.na(dataset$countryOfCitizenship))
+
+isti_indeksi <- country_NA == countryOfCitizenship_country_NA
+
+cat("Procenat redova koji imaju vrednost u koloni countryOfCitizenship, a nemaju u koloni country: ",(sum(isti_indeksi) / length(isti_indeksi)) * 100, "%")
+```
+
+Dolazimo do zanimljivog zaključka. 100% redova koje sadrži NA vrednosti u koloni **country**, ima vrednost u koloni **countryOfCitizenship**. 
+
+Uzećemo sve redove gde imamo nedostajuće vrednosti za **country** i popuniti ih vrednostima kolone **countryOfCitizenship**.
+```{r}
+dataset$country <- ifelse(is.na(dataset$country), dataset$countryOfCitizenship, dataset$country)
+```
+
+
+Nakon što smo uspešno popunili vrednosti za kolonu **country**, sledeći korak je rešavanje nedostajućih vrednosti u koloni **city**. Da bismo to postigli, prvo analiziramo koliko gradova možemo popuniti na osnovu dostupnih informacija u koloni country, gde se vrednosti u koloni city trenutno nalaze kao 'NA'.
+```{r}
+na_rows <- which((!is.na(dataset$country)) & (is.na(dataset$city)))
+length(na_rows)
+```
+```{r}
+unique_grad_zemlja <- unique(dataset[c("country", "city")]) %>%
+  filter(is.na(city) & !is.na(country))
+sum(is.na(unique_grad_zemlja))
+```
+
+
+```{r}
+group_grad_zemlja <- dataset %>%
+  filter((!is.na(city)))%>% 
+  group_by(country, city) %>%
+  summarize(broj_ponavljanja = n()) %>% 
+  ungroup()
+```
+
+Grupisanjem gradova prema zemljama dobijamo jasniju sliku o vezi izmedju zemalja i njihovih najčešće povezanih gradova.
+Nakon što dobijemo ove informacije, fokusiramo se na grupisanje podataka prema kolonama city i country. Ovo nam omogućava da identifikujemo broj pojavljivanja određenog grada u kombinaciji sa određenom zemljom.
+
+```{r}
+max_zemlja_grad_group <- group_grad_zemlja %>%
+  group_by(country) %>%
+  filter(broj_ponavljanja == max(broj_ponavljanja))
+max_zemlja_grad_group
+```
+
+```{r}
+jedinstvene_zemlja_grad <- max_zemlja_grad_group %>%
+  distinct(country, .keep_all = TRUE) %>%
+  transmute(country, city) 
+```
+
+```{r}
+
+for (i in seq_len(nrow(dataset))) {
+  match_row <- which(jedinstvene_zemlja_grad$country == dataset$country[i])
+  if (length(match_row) > 0) {
+    if(is.na(dataset$city[i]) == TRUE){
+      dataset$city[i] <- jedinstvene_zemlja_grad$city[match_row]
+    }
+  }
+}
+```
+
+Prolazimo kroz ove izdvojene podatke koji se odnose na redove koji se najčešće pojavljuju, pri  čemu zemlja i grad zajedno čine jedinstvenu kombinaciju i popunjavamo nedostajuće vrednosti u koloni **city** tamo gde znamo vrednost za kolonu **country**. 
+Na ovaj način, sistematski rešavamo problem nedostajućih vrednosti u gradovima, koristeći informacije o zemljama kao smernice za popunjavanje.
+
+```{r}
+sum(is.na(dataset$city))
+```
+
+Da bismo popunili preostalih 5 nedostajućih vrednosti u koloni **city**, prvo ćemo proveriti da li su u pitanju jedinstvene zemlje koje već sadrže 'NA' vrednosti za grad. Ukoliko su te zemlje identifikovane, koristićemo dodatni skup podataka **worldcities** koji sadrži sve relevantne informacije o gradovima širom sveta.
+
+```{r}
+nrow <- which((!is.na(dataset$country)) & is.na(dataset$city))
+
+na_grad_zemlja <- dataset[nrow, ]
+
+na_grad <- na_grad_zemlja %>%
+  group_by(country, city, .groups = "drop_last") %>%
+  summarize(count = n()) %>% 
+  ungroup()
+
+```
+
+```{r}
+zemlje_gradovi <- read.csv("worldcities.csv")
+
+head(zemlje_gradovi,5)
+``` 
+
+Nakon uspešnog učitavanja ovog skupa podataka, koristićemo informacije o zemljama iz skupa **worldcities** da popunimo nedostajuće vrednosti u koloni **city** za preostale redove, oslanjajući se na već poznate vrednosti u koloni **country**.
+```{r}
+dataset <- dataset %>%
+  mutate(city = ifelse(is.na(city), zemlje_gradovi$city_ascii[match(country, zemlje_gradovi$country)], city))
+```
+
+```{r}
+cat("Proverom utvrdjujemo da je broj nedostajucih vrednosti za kolonu city sada:",sum(is.na(dataset$city)))
+```
+
+U nastavku ćemo se posvetiti popunjavanju nedostajućih vrednosti u vezi sa ekonomskim faktorima država, uključujući bruto domaći proizvod, populaciju, takse i slično. Na početku važno je napomenuti da želimo pronaći najsvežije podatke vezane za ekonomske faktore kako bismo osigurali ažurnost našeg skupa podataka. 
+
+Pošto u našem skupu podataka postoje observacije koje su popunjene i imaju ove podatke, njih ćemo iskoristiti za popunjavanje vrednosti država kojima to nedostaje, naravno ukoliko je o istim državama reč.
+
+Kreiraćemo funckiju **fill_missing_values** koja će nam služiti za popunjavanje kolona koje sadrže nedostajuće vrednosti tako što funkciji prosleđujemo *skup podataka*, *naziv kolone koju želimo popuniti* i *skup podataka koji sadrži vrednosti za popunjavanje*. 
+
+```{r}
+fill_missing_values <- function(dataset, kolona_za_popunjavanje, dataset_sa_vrednostima) {
+  dataset <- dataset %>%
+    mutate(!!kolona_za_popunjavanje := ifelse(
+      is.na(!!sym(kolona_za_popunjavanje)),
+      dataset_sa_vrednostima[[kolona_za_popunjavanje]][match(country, dataset_sa_vrednostima$country)],
+      !!sym(kolona_za_popunjavanje)
+    ))
+  return(dataset)
+}
+```
+
+#### Kolona gdp_country
+Izdvojićemo sve države i njihov GDP.
+```{r}
+countries_with_gdp <- dataset %>%
+  transmute(country, gdp_country) %>%
+  filter(!is.na(gdp_country)) %>%
+  unique()
+
+dataset <- fill_missing_values(dataset, "gdp_country", countries_with_gdp)
+```
+#### Kolona **population_country**
+
+```{r}
+countries_with_population <- dataset %>%
+  transmute(country, population_country) %>%
+  filter(!is.na(population_country)) %>% 
+  unique()
+
+dataset <- fill_missing_values(dataset, "population_country", countries_with_population)
+```
+
+U nastavku, želimo prikazati kolone koje sadrže NA vrednosti, kao i udeo nedostajućih vrednosti u tim kolonama.
+
+Kreiraćemo funkciju koja će nam prikazati tabelu nedostajućih vrednosti i procenat za prosleđene kolone-- 
+```{r}
+summary_na <- function(dataset, column_names){
+  number_of_na <- colSums(is.na(dataset[, column_names]))
+  na_pct <- (number_of_na / nrow(dataset)) * 100
+  
+  table_with_pct_of_na <- data.frame(
+  "Naziv kolone" = column_names,
+  "Broj nedostajucih vrednosti" = number_of_na,
+  "Procenat neodstajucih vrednosti"= na_pct,
+  stringsAsFactors = FALSE
+)
+  rownames(table_with_pct_of_na) <- NULL
+  
+  print(table_with_pct_of_na)
+}
+```
+
+```{R}
+columns_to_fill <- c("gross_tertiary_education_enrollment",
+  "gross_primary_education_enrollment_country",
+  "tax_revenue_country_country",
+  "total_tax_rate_country",
+  "cpi_country",
+  "cpi_change_country"
+  )
+
+summary_na(dataset, columns_to_fill)
+```
+
+```{r}
+na_values <- subset(dataset,
+is.na(dataset$gross_tertiary_education_enrollment) &
+is.na(dataset$gross_primary_education_enrollment_country) &
+is.na(dataset$tax_revenue_country_country) &
+is.na(dataset$total_tax_rate_country) &
+is.na(dataset$cpi_country) &
+is.na(dataset$cpi_change_country)) 
+
+
+na_values_df_unique <- unique(na_values[c("country", "gross_tertiary_education_enrollment", "gross_primary_education_enrollment_country", "tax_revenue_country_country", "total_tax_rate_country", "cpi_country", "cpi_change_country")])
+
+cat("Potrebno je dopuniti vrednosti za", nrow(na_values_df_unique), "redova.")
+```
+
+Izdvajamo redove sa potpunim vrednostima za navedene kolone i zatim želimo dobiti jedinstvene vrednosti bazirane na koloni **country**. 
+```{r}
+sa_vrednostima <- subset(dataset,
+  !is.na(dataset$gross_tertiary_education_enrollment) &
+  !is.na(dataset$gross_primary_education_enrollment_country) &
+  !is.na(dataset$tax_revenue_country_country) &
+  !is.na(dataset$total_tax_rate_country) &
+  !is.na(dataset$cpi_country) &
+  !is.na(dataset$cpi_change_country)
+)
+
+sa_vrednostima_df_unique <- unique(sa_vrednostima[c("country", "gross_tertiary_education_enrollment", "gross_primary_education_enrollment_country", "tax_revenue_country_country", "total_tax_rate_country", "cpi_country","cpi_change_country")])
+
+cat("Broj redova koji ćemo koristiti za dalje popunjavanje nedostajućih vrednosti iznosi:", nrow(sa_vrednostima_df_unique))
+
+```
+
+#### Kolona gross_primary_education_enrollment_country
+```{r}
+dataset <- fill_missing_values(dataset, "gross_primary_education_enrollment_country", sa_vrednostima_df_unique)
+```
+#### Kolona gross_tertiary_education_enrollment
+```{r}
+dataset <- fill_missing_values(dataset, "gross_tertiary_education_enrollment",sa_vrednostima_df_unique)
+```
+####  Kolona tax_revenue_country_country
+```{r}
+dataset <- fill_missing_values(dataset, "tax_revenue_country_country",sa_vrednostima_df_unique)
+```
+####  Kolona total_tax_rate_country
+```{r}
+dataset <- fill_missing_values(dataset, "total_tax_rate_country",sa_vrednostima_df_unique)
+```
+####  Kolona cpi_country
+```{r}
+dataset <- fill_missing_values(dataset, "cpi_country",sa_vrednostima_df_unique)
+```
+####  Kolona cpi_change_country
+```{r}
+dataset <- fill_missing_values(dataset, "cpi_change_country",sa_vrednostima_df_unique)
+```
+#### Kolona life_expectancy_country
+```{r}
+countries_with_life_expectancy <- dataset %>%
+  transmute(country, life_expectancy_country) %>%
+  filter(!is.na(life_expectancy_country)) %>% 
+  unique()
+
+dataset <- fill_missing_values(dataset, "life_expectancy_country", countries_with_life_expectancy)
+```
+
+```{r}
+rows_na_ostatak <- dataset %>%
+  filter(
+    is.na(gdp_country) |
+    is.na(population_country) |
+    is.na(gross_tertiary_education_enrollment) |
+    is.na(gross_primary_education_enrollment_country) |
+    is.na(tax_revenue_country_country) |
+    is.na(total_tax_rate_country) |
+    is.na(cpi_country) |
+    is.na(cpi_change_country) | 
+    is.na(life_expectancy_country)
+  ) %>%
+  transmute(country,
+            gdp_country,
+            population_country,
+            gross_tertiary_education_enrollment,
+            gross_primary_education_enrollment_country,
+            tax_revenue_country_country,
+            total_tax_rate_country,
+            cpi_country,
+            cpi_change_country,
+            life_expectancy_country) %>%
+  unique()
+```
+Ponovo ćemo iskoristiti funkciju **summary_na** kako bismo utvrdili koliko vrednosti preostaje da popunimo.
+```{r}
+summary_na(dataset, colnames(rows_na_ostatak[-1]))
+```
+Popunjavanjem nedostajućih vrednosti na osnovu dostupnih vrednosti iz skupa podataka popunili smo određeni broj vrednosti. 
+
+Za popunjavanje ostalih nedostajućih vrednosti poslužićemo se bibliotekama **wbstats** i **countrycode**.
+
+Biblioteka **countrycode** u R je korisna alatka koja pruža funkcionalnosti za mapiranje naziva država na njihove odgovarajuće kodove, i obrnuto. Ova biblioteka olakšava rad s podacima o državama, omogućavajući identifikaciju zemalja pomoću različitih standardizovanih oznaka, poput ISO koda. Takođe, pruža podršku za mapiranje načina zapisa imena država, što je korisno u analizama podataka koje uključuju informacije o različitim zemljama. Ova funkcionalnost je posebno značajna u radu s međunarodnim podacima gde je konzistentno identifikovanje zemalja ključno za analizu i interpretaciju informacija.
+
+Biblioteka **wbstats** u R omogućava korisnicima jednostavan pristup i preuzimanje podataka iz World Bank statističke baze. Ova biblioteka olakšava ekstrakciju ekonometrijskih i ekonomske podatke direktno iz izvora Svetske banke, što omogućava analitičarima brz pristup informacijama o svetskim ekonomijama, socijalnim pokazateljima i drugim ključnim varijablama. Integracijom sa World Bank API-jem, biblioteka "wbstats" omogućava automatsko preuzimanje ažuriranih podataka, čineći je korisnim alatom za istraživače, analitičare i sve one koji žele proučavati međunarodne ekonomske trendove i pokazatelje.
+
+
+Za prikupljanje neophodnih informacija za popunjavanje nedostajućih vrednosti, koristićemo kodove koji nas vode do baze podataka koja sadrži informacije relevantne za kolone u našem skupu podataka.
+
+```{r}
+gross_tertiary_education_enrollment_indicator_code <- "SE.TER.ENRR"
+gross_primary_education_enrollment_country_indicator_code <- "SE.PRM.ENRR"
+
+tax_revenue_country_country_indicator_code <- "GC.TAX.TOTL.GD.ZS"
+# GC.TAX.TOTL.CN # GC.TAX.TOTL.GD.ZS
+total_tax_rate_country_indicator_code <- "IC.TAX.TOTL.CP.ZS"
+cpi_country_indicator_code <- "FP.CPI.TOTL"
+cpi_change_country_indicator_code = "FP.CPI.TOTL.ZG"
+
+gdp_country_indicator_code <- "NY.GDP.MKTP.CD"
+population_country_indicator_code <-  "SP.POP.TOTL"
+life_expectancy_country_indicator_code <- "SP.DYN.LE00.IN"
+
+```
+
+#Napisi sto smo izbacili Guernsey iz wb stats
+
+```{r}
+countries_of_interest <- rows_na_ostatak$country
+valid_countries_of_interest <- countries_of_interest[countries_of_interest != "Guernsey"]
+
+valid_iso_codes <- countrycode(valid_countries_of_interest, origin = "country.name", destination = "iso2c")
+```
+
+
+```{r}
+
+get_world_bank_data <- function(indicator_code) {
+  wb_data <- wb(
+    indicator = indicator_code,
+    country = valid_iso_codes,
+    startdate = 2021,
+    enddate = 2023,
+    freq = "Y"
+  )
+  return(wb_data)
+}
+
+#objasniti ovo
+get_newest_data <- function(dataset) {
+  dataset %>%
+    group_by(country) %>%
+    filter(date == max(date)) %>%
+    ungroup()
+}
+
+fill_column_with_data <- function(df, wb_data, col_name) {
+  df %>%
+    mutate({{col_name}} := ifelse(is.na({{col_name}}), wb_data$value[grepl(country[1], df$country)], {{col_name}})) %>%
+    return()
+}
+```
+
+U nastavku ćemo popuniti preostale nedostajuće vrednosti podacima koje smo prikupili korišćenjem biblioteke **wb_stats**.
+
+```{r}
+wb_data_gdp_country <- get_world_bank_data(
+ gdp_country_indicator_code
+)
+
+
+wb_data_gdp_country<-get_newest_data(wb_data_gdp_country)
+rows_na_ostatak<-fill_column_with_data(rows_na_ostatak, wb_data_gdp_country,gdp_country)
+
+sum(is.na(rows_na_ostatak$gdp_country)) 
+
+```
+```{r}
+## ovi podaci nisu dobri, dobijamo dbh - double, on ga prebaci u cha i ne moze da izracunamo
+wb_data_gdp_country <- get_world_bank_data(
+ gdp_country_indicator_code
+)
+
+wb_data_gdp_country<-get_newest_data(wb_data_gdp_country)
+
+
+
+sum(is.na(rows_na_ostatak$gdp_country)) 
+
+```
+
+```{r}
+wb_data_population_country <- get_world_bank_data(
+ population_country_indicator_code
+)
+
+wb_data_population_country<-get_newest_data(wb_data_population_country)
+
+rows_na_ostatak<-fill_column_with_data(rows_na_ostatak, wb_data_population_country,population_country)
+
+sum(is.na(rows_na_ostatak$population_country)) 
+
+```
+
+```{r}
+wb_data_gross_tertiary_education_enrollment <- get_world_bank_data(
+ gross_tertiary_education_enrollment_indicator_code
+)
+
+wb_data_gross_tertiary_education_enrollment<-get_newest_data(wb_data_gross_tertiary_education_enrollment)
+
+rows_na_ostatak<-fill_column_with_data(rows_na_ostatak, wb_data_gross_tertiary_education_enrollment,gross_tertiary_education_enrollment)
+
+sum(is.na(rows_na_ostatak$gross_tertiary_education_enrollment)) 
+
+```
+
+```{r}
+wb_data_life_expectancy <- get_world_bank_data(
+ life_expectancy_country_indicator_code
+)
+
+wb_data_life_expectancy<-get_newest_data(wb_data_life_expectancy)
+
+rows_na_ostatak<-fill_column_with_data(rows_na_ostatak, wb_data_life_expectancy,life_expectancy_country)
+
+sum(is.na(rows_na_ostatak$life_expectancy_country)) 
+
+```
+
+```{r}
+wb_data_gross_primary_education_enrollment_country <- get_world_bank_data(
+ gross_primary_education_enrollment_country_indicator_code
+)
+
+wb_data_gross_primary_education_enrollment_country <- get_newest_data(wb_data_gross_primary_education_enrollment_country)
+
+rows_na_ostatak <- fill_column_with_data(rows_na_ostatak, wb_data_gross_primary_education_enrollment_country,gross_primary_education_enrollment_country)
+
+sum(is.na(rows_na_ostatak$gross_primary_education_enrollment_country)) 
+
+
+```
+
+```{r}
+wb_data_tax_revenue_country <- get_world_bank_data(
+ tax_revenue_country_country_indicator_code
+)
+
+wb_data_tax_revenue_country<-get_newest_data(wb_data_tax_revenue_country)
+
+rows_na_ostatak <- fill_column_with_data(rows_na_ostatak, wb_data_tax_revenue_country, tax_revenue_country_country)
+
+sum(is.na(rows_na_ostatak$tax_revenue_country_country)) 
+```
+
+
+```{r}
+wb_data_total_tax_rate_country <- get_world_bank_data(
+ total_tax_rate_country_indicator_code
+)
+
+wb_data_total_tax_rate_country<-get_newest_data(wb_data_total_tax_rate_country)
+
+rows_na_ostatak <- fill_column_with_data(rows_na_ostatak, wb_data_total_tax_rate_country, total_tax_rate_country)
+
+sum(is.na(rows_na_ostatak$total_tax_rate_country)) 
+
+```
+
+```{r}
+
+wb_data_cpi_country <- get_world_bank_data(
+ cpi_country_indicator_code
+)
+
+wb_data_cpi_country<-get_newest_data(wb_data_cpi_country)
+
+rows_na_ostatak <- fill_column_with_data(rows_na_ostatak, wb_data_cpi_country, cpi_country)
+
+sum(is.na(rows_na_ostatak$cpi_country)) 
+
+```
+
+```{r}
+wb_data_cpi_change_country <- get_world_bank_data(
+ cpi_change_country_indicator_code
+)
+
+wb_data_cpi_change_country<-get_newest_data(wb_data_cpi_change_country)
+
+rows_na_ostatak <- fill_column_with_data(rows_na_ostatak, wb_data_cpi_change_country, cpi_change_country)
+
+sum(is.na(rows_na_ostatak$cpi_country)) 
+
+```
+
+
+```{r}
+rows_na_ostatak
+dataset <- fill_missing_values(dataset, "gdp_country", rows_na_ostatak)
+
+```
+
+```{r}
+dataset <- fill_missing_values(dataset, "population_country", rows_na_ostatak)
+```
+```{r}
+dataset <- fill_missing_values(dataset, "life_expectancy_country", rows_na_ostatak)
+```
+```{r}
+dataset <- fill_missing_values(dataset, "gross_tertiary_education_enrollment", rows_na_ostatak)
+```
+```{r}
+dataset <- fill_missing_values(dataset, "gross_primary_education_enrollment_country", rows_na_ostatak)
+```
+```{r}
+dataset <- fill_missing_values(dataset, "tax_revenue_country_country", rows_na_ostatak)
+```
+```{r}
+dataset <- fill_missing_values(dataset, "total_tax_rate_country", rows_na_ostatak)
+```
+```{r}
+dataset <- fill_missing_values(dataset, "cpi_country", rows_na_ostatak)
+```
+```{r}
+dataset <- fill_missing_values(dataset, "cpi_change_country", rows_na_ostatak)
+```
+
+
+```{r}
+summary_na(dataset, colnames(rows_na_ostatak))
+```
+
+```{r}
+# gross_tertiary_education_enrollment
+na_row_gross_tertiary_education_enrollmentr <- dataset[is.na(dataset$gross_tertiary_education_enrollment), ]
+
+print(na_row_gross_tertiary_education_enrollmentr)
+
+dataset$gross_tertiary_education_enrollment[is.na(dataset$gross_tertiary_education_enrollment)] <- 36
+
+
+```
+```{r}
+na_row_tax_revenue_country <- dataset[is.na(dataset$tax_revenue_country_country), ]
+
+print(na_row_tax_revenue_country) 
+```
+
+Primetili smo da za Andoru nedostaju vrednosti u kolonama 'total_tax_rate_country' i 'tax_revenue_country'. Ova odsutnost ukazuje na to da Andora ne plaća porez, što je razlog zašto je svrstavamo među zemlje koje se smatraju "tax-free" ili oslobođenim od plaćanja poreza.
+
+Primetili smo da za Lihtenštajn imamo podatke o prihodima od poreza (kolona 'tax_revenue_country'), ali ne i za ukupan porez (kolona 'total_tax_revenue'). Ovo može ukazivati na to da Lihtenštajn primenjuje različite vrste poreza na dobit, prihode i druge aspekte, što otežava jednostavno izračunavanje ukupnog poreza.
+
+```{r}
+
+na_row_cpi_country <- dataset[is.na(dataset$cpi_country), ]
+print(na_row_cpi_country) 
+
+dataset$cpi_country[dataset$country == "Andorra"] <- 114.11
+dataset$cpi_change_country[dataset$country == "Andorra"] <- 4.8
+
+dataset$cpi_country[dataset$country == "Uzbekistan"] <- 107.1
+
+
+dataset$cpi_change_country[dataset$country == "Uzbekistan"] <- 11.9
+
+dataset$cpi_country[dataset$country == "Liechtenstein"] <- 107.1
+dataset$cpi_change_country[dataset$country == "Liechtenstein"] <- 1.52
+
+```
+
+
+#### Kolona **age**
+  Godine milijardera mogu biti značajne i igrati određenu ulogu u određivanju neto vrednosti milijardera. Zbog toga potrudićemo se da primenimo različite tehnike i popunimo ih na što bolji način.
+Pošto u našem skupu podataka postoji kolona **birthDate** na osnovu nje možemo pronaći one observacije koje imaju taj podatak a kojima vrednost za **age** NA i izračunati godine milijardera.
+
+```{r}
+age_pre <- sum(is.na(dataset$age))
+indeksi_age = which(is.na(dataset$age & !(is.na(dataset$birthDate) | is.na(dataset$birthYear))))
+dataset[indeksi_age, ]$age <- year(Sys.Date()) - year(dataset[indeksi_age, ]$birthDate)
+age_posle <- sum(is.na(dataset$age))
+
+cat("Broj NA vrednosti pre popunjavanja ",age_pre,"\nBroj NA vrednosti posle popunjavanja",age_posle)
+```
+Nakon što smo iskoristili **birthDate** i **birthYear** za popunjavanje godina milijardera možemo ih izbrisati iz skupa podataka.
+```{r}
+dataset <- dataset[, -which(names(dataset) %in% 
+                              c("birthDate","birthYear"))]
+```
+
+Na ovaj način popunjena je samo jedna vrednost. Kod popunjavanja kolone **age** najlakši način bi bio korišćenje proseka, ali to može dosta uticati na konačnu predikciju tako da ćemo primeniti drugi način. Ideja bi bila da na osnovu kolona **gdp_country** i **population_country** dobijemo GDP po glavi stanovnika i kreirati kolonu **economic_group** koja bi predstavljala kategorizaciju ekonomija na osnovu **GNI** (Gross National Income per capita). Razlog za ovaj pristup je to što iz prakse znamo da što je bogatija zemlja njeno stanovništvo ima duži životni vek(viši životni standardi) i samim tim prosek godina neće biti isti za svakog milijardera.
+
+```{r}
+dataset$gdp_per_capita <- dataset$gdp_country / dataset$population_country
+```
+
+Low-Income Countries (LICs):
+
+GNI per capita: $1,045 or less (as of the World Bank's fiscal year 2022 threshold).
+Lower-Middle-Income Countries (LMCs):
+
+GNI per capita: Between $1,046 and $4,095 (as of the World Bank's fiscal year 2022 threshold).
+Upper-Middle-Income Countries (UMCs):
+
+GNI per capita: Between $4,096 and $12,695 (as of the World Bank's fiscal year 2022 threshold).
+High-Income Countries (HICs):
+
+GNI per capita: $12,696 or more (as of the World Bank's fiscal year 2022 threshold).
+
+```{r}
+lic_treshold <- 1046
+lmc_treshold <- 4096
+umc_treshold <- 12696
+
+
+dataset$economic_group <- ifelse(dataset$gdp_per_capita < lic_treshold, "LIC", 
+                                ifelse(dataset$gdp_per_capita < lmc_treshold, "LMC",
+                                       ifelse(dataset$gdp_per_capita < umc_treshold, "UMC", "HIC")))
+
+mean_age_by_economic_group <- dataset %>%
+  group_by(economic_group, industries) %>%
+  mutate(
+    economic_group
+  ) %>%
+  summarise(
+    mean = round(mean(life_expectancy_country, na.rm = T))
+  )
+
+dataset$age[is.na(dataset$age)] <- mean_age_by_economic_group$mean[match(dataset$economic_group, mean_age_by_economic_group$economic_group)]
+
+```
+
+Dostupnost podataka za popunjavanje kolone **total_tax_country** koriscnjem wb_stat nisu relevantni jer su ti podaci iz 2015. godine, a takvi podaci nisu upotrebljivi zbog događaja kao što je pandemija koronavirusa koja je značajno uticala na ekonomiju od 2019. godine.
+```{r}
+na_row_total_tax <- dataset[is.na(dataset$total_tax_rate_country), ]
+
+countries_without_total_tax <- dataset[is.na(dataset$total_tax_rate_country), ]
+countries_without_total_tax <- subset(countries_without_total_tax, select = c("country", "economic_group"))
+countries_without_total_tax <- unique(countries_without_total_tax)
+```
+Monako nema takse tako da cemo da total tax rate stavimo na 0
+Za ostale zemlje nemamo tacne informacije jer one variraju. Npr ako si na tajvanu 2 godine placas takse 45% ako si 4 35% itd. Posto imamo economic_group uzecemo prosek total tax rate i popuniti ostatak
+```{r}
+mean_total_tax_by_economic_group <- dataset %>%
+  group_by(economic_group) %>%
+  summarise(
+    mean_total_tax = mean(total_tax_rate_country, na.rm = T)
+  )
+
+dataset$total_tax_rate_country[dataset$country %in% countries_without_total_tax$country] <- mean_total_tax_by_economic_group$mean_total_tax[match(countries_without_total_tax$economic_group, mean_total_tax_by_economic_group$economic_group)]
+
+```
+
+Kreiraćemo kolonu **wealthLevel** kako bismo klasifikovali milijardere prema njihovom bogatstvu.
+
+Podaci će biti podeljeni u dve glavne grupe, gde će jedna predstavljati izuzetno bogate milijardere, dok će druga obuhvatiti bogate. Ovo će nam omogućiti bolje razumevanje raspodele bogatstva među milijarderima u našem skupu podataka.
+
+Pre nego što odredimo koji algoritam ćemo koristiti pri podeli milijardera na grupe grafički ćemo prikazati milijardere i njihovo bogatstvo.  
+```{r}
+ggplot(dataset) +
+  geom_histogram(aes(x=finalWorth), binwidth = 1000) +
+  labs(title = "Bogatstvo milijardera pre primene logaritamske funckije",
+       x="Bogatstvo milijardera(hiljade miliona)",
+       y="Broj milijardera")
+```
+Vidimo da velika većina milijardera ima bogatstvo između 1 i ~10 milijardi dolara. Kako to da naš grafik ide do čak 200 000? U svetu je sve više prisutna neravnomerna raspodela bogatstva gde kao što vidimo pojedinci imaju enormno bogatstvo i izdvajaju se od ostatka. Da li te ljude možemo smatrati izuzecima? Ovi pojedinci se ne mogu smatrati izuzecima, jer predstavljaju deo šireg trenda neravnomerne raspodele bogatstva u svetu.
+
+Ovakva raspodela bi mogla da nam napravi problem u algoritmu koji ćemo koristiti za kreiranje grupa milijardera pa je potrebno izvršiti skaliranje podataka.
+
+Odlučili smo se logaritamsku funkciju koju ćemo primeniti nad kolonom **finalWorth**. Logaritamska funkcija se često koristi za skaliranje podataka kada želimo smanjiti razlike između velikih vrednosti i istovremeno zadržati relativne razlike među malim vrednostima. 
+
+```{r}
+dataset$log_finalWorth <- log(dataset$finalWorth)
+```
+
+```{r}
+ggplot(dataset) +
+  geom_histogram(aes(x=log_finalWorth)) +
+  labs(title = "Bogatstvo milijardera nakon primene logaritamske funckije",
+       x="Bogatstvo milijardera",
+       y="Broj milijardera")
+  
+```
+
+Iako smo razmatrali i primenili algoritme DBScan i Mclust, rezultati nisu bili zadovoljavajući zbog specifičnosti našeg skupa podataka. Mclust, iako manje osetljiv na početne pozicije i bolje prilagođen različitim oblicima i veličinama klastera, nije se pokazao kao najbolji izbor u ovom kontekstu. Slično tome, DBScan, iako efikasan kod klastera nepravilnog oblika i automatskog određivanja broja klastera, nije bio optimalan za naš specifičan slučaj.
+
+Zbog unapred definisane strukture podataka i potrebe za podelom milijardera u grupe bogatih i ekstremno bogatih k-means algoritam se čini kao dobra opcija. Međutim k-means algoritam je izvršio podelu u dve grupe smatrajući da su milijarderi sa bogatstvom većim od 3800(hiljada miliona)  ekstremno bogati što nije tačno. Zbog toga detaljnim istraživanjem došli smo do zaključka da se granica od 10 000 hiljada miliona uzima kao prag za podelu milijardera na bogate i ekstremno bogate. Samim tim podelu ćemo izvršiti ručno.
+
+```{r}
+set.seed(123)
+
+#kmeans_model <- kmeans(dataset$log_finalWorth, centers = 2)
+dataset$wealthLevel <- as.factor(ifelse(dataset$finalWorth < 10000, 0, 1))#as.factor(kmeans_model$cluster)
+```
+
+```{r}
+ggplot(dataset) +
+  geom_boxplot(aes(x=wealthLevel, y=log_finalWorth))
+```
+Na osnovu prikazanih boxplot-ova zaključujemo da kategorija 0 predstavlja bogate milijardere, dok kategorija 1 predstavlja ekstremno bogate milijardere. Iako postoji jasna razlika vidimo da u kategoriji 1 imamo vrednosti koje su veće od maksimuma što je dodatni indikator da se radi o ekstremno bogatim milijarderima. 
+
+```{r}
+ggplot(dataset) +
+  geom_bar(aes(x=wealthLevel, fill=wealthLevel)) +
+  labs(title="Podela milijardera na osnovu bogatstva",
+       x="Grupe milijardera",
+       y="Broj milijardera") +
+  scale_fill_manual(
+    name = "",  
+    values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  
+  )
+```
+
+# EDA (Exploratory Data Analysis)
+U ovom koraku ćemo se fokusirati na analizu podataka kako bismo otkrili moguće trendove koji bi nam pomogli u dubljem razumevanju informacija i klasifikaciji milijardera prema bogatstvu.
+
+### Kolona age
+Analiziraćemo raspodelu bogatstva među milijarderima na osnovu tri starosne grupe: mladi (18-40 godina), srednje doba (40-60 godina) i stari (preko 60 godina). 
+Cilj nam je da identifikujemo starosnu grupu s najvećim brojem milijardera i istražimo trendove u kategorizaciji prema bogatstvu milijardera na bogate i ekstremno bogate.
+
+```{r}
+dataset$age_group[dataset$age >= 18 & dataset$age <= 40]  <- "Mladi"
+dataset$age_group[dataset$age > 40 & dataset$age <= 60]  <- "Srednje doba"
+dataset$age_group[dataset$age > 60]  <- "Stari"
+```
+
+```{r}
+ggplot(dataset) +
+  geom_bar(aes(x=age_group, fill=wealthLevel),position = "dodge") +
+  labs(title="Raspodela bogatstva prema starosnoj grupi milijardera",
+       x="Starosna grupa",
+       y="Broj milijardera") +
+   scale_fill_manual(
+    name = "",  
+    values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  
+  )
+  
+```
+Sa grafika zakljucujemo da milijarderi, kako stare, imaju tendenciju da izgrade veće bogatstvo. 
+Stariji milijarderi su možda imali više vremena i iskustva da grade svoje poslovne imperije ili su imali priliku da stvore ili naslede značajna bogatstva tokom godina.
+
+Osim toga, primetno je da ostale starosne grupe imaju manje zastupljenost među milijarderima, dok najstariji čine veći deo populacije milijardera. Ovo može ukazivati na to da je sticanje ekstremnog bogatstva često dugotrajan proces koji se razvija tokom vremena, što dovodi do veće zastupljenosti među starijim pojedincima.
+
+### Kolona country
+
+Pretpostavljamo da je najveći broj milijardera koncentrisan u zemljama koje ostvaruju visok bruto domaći proizvod (GDP). Korišćenjem podataka o ekonomskoj snazi zemalja, identifikovaćemo one države koje se ubrajaju među najrazvijenijim. Na osnovu tih informacija, izdvojićemo top 5 zemalja u kojima se nalazi najveći broj milijardera.
+
+
+```{r}
+top_5_countries <- dataset %>%
+  group_by(country) %>%
+  summarise(
+    num_of_billionaires = n()
+  ) %>%
+  arrange(desc(num_of_billionaires)) %>%
+  slice_head(n = 5)
+
+ggplot(top_5_countries, aes(x = reorder(country, -num_of_billionaires), y = num_of_billionaires)) +
+  geom_bar(stat = "identity", fill = "skyblue", alpha = 0.7) +
+  labs(title = "Top 5 zemalja sa najviše milijardera",
+       x = "Naziv države",
+       y = "Broj milijardera") +
+  theme_minimal()
+```
+```{r}
+top_5_most_wealthy_countries <- dataset %>%
+  distinct(country, .keep_all = TRUE) %>%
+  select(country, gdp_country) %>%
+  arrange(desc(gdp_country)) %>%
+  slice_head(n = 5)
+
+top_5_most_wealthy_countries$country
+```
+
+Primetili smo da Indija ima veći broj milijardera u odnosu na Japan, a razlog tome leži u različitim poslovnim kulturama ovih zemalja. Indija se ističe otvorenijom poslovnom kulturom koja podstiče preduzetništvo i rizik, dok Japan ima tradicionalnu poslovnu kulturu koja vrednuje stabilnost što može predstavljati izazov za preduzetnike.
+```{r}
+billionaires_from_top_5_country <- dataset[dataset$country %in% top_5_countries$country, ]
+
+ggplot(billionaires_from_top_5_country) +
+  geom_bar(aes(x=country, fill=wealthLevel),position = "dodge")  +
+   labs(title = "Raspodela bogatstva milijardera u 5 najbogatijih zemalja",
+       x = "Naziv države",
+       y = "Broj milijardera") +
+   scale_fill_manual(
+    name = "",  
+    values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  
+  )
+```
+Očekivano je da će se veći broj milijardera sa ekstremnim bogatstvom nalaziti u zemljama kao što su Kina i Sjedinjene Američke Države, ali sa grafika vidimo da Kina ima značajno manji broj ekstremno bogatih milijardera nego Sjedinjene Američke Države. Koji je razlog toga? 
+
+Jedan od razloga koji potencijalno dovodi do razlike može se delimično pripisati različitim ekonomskim sistemima. Kina funkcioniše u okviru kapitalističkog sistema, dok su Sjedinjene Američke Države deo zapadnog sveta i nude više mogućnosti za stvaranje ogromnog bogatstva. Ova raznolikost u ekonomskim pristupima i prilikama doprinosi razlikama u broju ljudi sa izuzetno visokim bogatstvom između ove dve zemlje.  
+
+
+### Kolona city
+
+```{r}
+top_10_cities <- dataset %>%
+  group_by(city) %>%
+  summarise(
+    num_of_billionaires = n()
+  ) %>%
+  arrange(desc(num_of_billionaires)) %>%
+  slice_head(n = 10)
+
+billionaires_from_top_10_cities <- dataset[dataset$city %in% top_10_cities$city, ]
+
+ggplot(billionaires_from_top_10_cities) + 
+  geom_bar(aes(x=city, fill=wealthLevel), position = "dodge") +
+   labs(title = "Raspodela bogatstva milijardera u gradovima",
+       x = "Naziv grada",
+       y = "Broj milijardera") +
+   scale_fill_manual(
+    name = "",  
+    values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  
+  ) + 
+  coord_flip()
+```
+Izdvojili smo top 10 gradova u kojima se uočava visoka koncentracija milijardera. Ovi gradovi predstavljaju centre globalnog poslovanja, tehnoloških inovacija i finansijskih tržišta, pružajući plodno tlo za stvaranje i rast bogatstva. Što se tiče podele milijardera na osnovu bogatstva ne uočavamo neke značajne trendove.
+
+```{r}
+ggplot(dataset) +
+  geom_bar(aes(x=industries, fill=wealthLevel), position="dodge") + 
+   labs(title = "Raspodela bogatstva milijardera prema industrijama",
+       x = "Naziv industrije",
+       y = "Broj milijardera") +
+  scale_fill_manual(
+    name = "",  
+    values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  
+  ) +
+  geom_bar(aes(x=reorder(industries, industries, FUN = function(x) length(x)), fill=wealthLevel)) +
+  labs(title="Industrije sa najviše milijardera") +
+  coord_flip()
+```
+Primećujemo da je najveći broj milijardera svoje bogatstvo steklo ulagajući u industrije poput tehnologije, preduzetništva, mode i maloprodaje. Očekivano je da tehnološka industrija prednjači jer je poznata po izuzetnoj brzini inovacija. Preduzetnici u ovoj industriji stvaraju nove poslovne modele i proizvode, značajno utičući na dinamiku cele industrije. Raznolike prilike za investicije u različite sektore takođe privlače milijardere. Industrija mode i stila često privlači bogate pojedince zbog globalne potražnje za luksuznim proizvodima.
+
+### Kolona selfMade
+
+Želimo da saznamo koliki je procenat milijardera koji su samostalno stekli bogatstvo.
+```{r}
+pie_data <- as.data.frame(table(dataset$selfMade))
+pie_data$percent <- (pie_data$Freq / sum(pie_data$Freq)) * 100
+
+ggplot(pie_data, aes(x = "", y = percent, fill = Var1)) +
+  geom_bar(stat = "identity", width = 5, position = "fill", color = "white") +
+  geom_text(aes(label = sprintf("%.1f%%", percent)), position = position_fill(vjust = 0.5), size = 3, color = "black") + 
+  coord_polar("y", start = 0) +
+  theme_void() + 
+  labs(title = "Raspodela milijardera koji su samostalno stekli bogastvo", fill = "Samostalni milijarderi")
+```
+
+```{r}
+ggplot(dataset) +
+  geom_bar(aes(x=selfMade, fill=wealthLevel), position="dodge")  + labs(title = "Raspodela bogatstva samostalnih milijardera",
+       x = "Samostalno stekli bogatstvo",
+       y = "Broj milijardera") +
+  scale_fill_manual(
+    name = "",  
+    values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  
+  ) + coord_flip()
+```
+
+Zaključujemo da je većina milijardera stekla bogatstvo samostalno. Takođe, primećujemo da među milijarderima koji su samostalno stekli bogatstvo postoji značajna koncentracija u kategoriji bogatih. 
+Kada posmatramo milijardere koji nisu sami stekli bogatstvo, već su deo nasledili, primetno je da imamo nižu koncentraciju ekstremno bogatih u odnosu na ekstremno bogate milijardere koji su samostalno stvorili svoje bogatsvo.
+
+### Kolona status
+
+Status milijardera nam objašnjava na koji način je milijarder stekao bogatstvo:
+
+- 'U' - označava milijardere koji su nasledili ili imaju nezarađeno bogatstvo,
+- 'S' - označava milijardere koji su nasledili deo ili celo bogatstvo,
+- 'R' -  označava milijardera koji je primalac nezarađenog bogatstva,
+- 'N' - novi milijarderi (status može biti privremen dok ne bude dostupno više informacija),
+- 'E' - nepoznat ili neodređeni status,
+- 'D' - predstavlja milijardere koji su sami stvorili, posebno preduzetnike koji su izgradili svoje bogatstvo
+
+
+Želimo da istražimo kako je raspodela milijardera povezana sa statusom koji označava način sticanja bogatstva.
+```{r}
+dataset$status[dataset$status == "Split Family Fortune"] <- "S"
+```
+```{r}
+ggplot(dataset) +
+  geom_bar(aes(x=status,  fill=wealthLevel), position="dodge")  + labs(title = "Raspodela bogatstva samostalnih milijardera",
+       x = "Samostalno stekli bogatstvo",
+       y = "Broj milijardera") +
+  scale_fill_manual(
+    name = "",  
+    values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  
+  ) + coord_flip()
+
+```
+
+Zaključujemo da broj milijardera koji imaju status **D** (samostalno stekli bogatstvo) dominira u odnosu na ostale kategorije. 
+
+Primetna je i približno ravnomerna raspodela između bogatih i ekstremno bogatih među milijarderima sa statusom **U** (naslednici).
+
+Među milijarderima koji su sami stekli bogatstvo, uočavamo veći broj bogatih, dok broj ekstremno bogatih nije toliko značajan u poredjenju sa milijarderima koji imaju status **U**.
+
+Milijarderi sa statusom **R** (primalci nezarađenog bogatstva) nemaju ekstremno bogate milijardere, kao i milijarderi koji se ubrajaju u status "R", "N", "E" takođe namaju značajan broj ekstremno bogatih.
+
+Grafički ćemo predstaviti i videti da li možemo doći do nekih zanimljivih činjenica između statusa i selfMade milijardera.
+```{r}
+ggplot(dataset) + 
+  geom_bar(aes(x=status, fill=selfMade), position = "dodge") + labs(title = "Status milijardera u odnosu na sticanje bogatstva",
+       x = "Status bogatstva",
+       y = "Broj milijardera") + 
+  guides(fill=guide_legend(title="Samostalno stekli bogatstvo"))
+```
+Ukoliko pogledamo status **R** i **S** vidimo da se oni razlikuju. Prisetimo se da status **S** označava milijardera koji je nasledio bogatstvo pa je logično da više postoji više milijardera koji nisu selfMade. Sa druge strane milijarderi koji imaju status **R** i koji označava da su milijarderi stekli nezarađeno bogatstvo(novac, nekretnine...) vidimo da je većina njih selfMade. Šta to znači ? Moguće je da su ti ljudi nasledili bogatstvo u vrednosti manjoj od milijardu dolara pa su vremenom ulagali svoja sredstva ili je jednostavno je cena njihovih nekretnina rasla do te mere da su prešli famoznu cifru od milijardu dolara i tako postali milijarderi.
+
+#### selfMade i gender
+
+```{r}
+ggplot(dataset) +
+  geom_bar(aes(x=gender, fill=selfMade), position="dodge") + labs(title = "Status milijardera u odnosu na sticanje bogatstva",
+       x = "Pol",
+       y = "Broj milijardera")  + 
+  guides(fill=guide_legend(title="Samostalno stekli bogatstvo"))
+```
+Zanimljivo je to da ima mnogo više žena nisu samostalno stekle svoje bogatstvo. Razlog može biti da su bile udate za nekog milijardera i da su razvodom dobile određeni deo bogatstva, ali mi to možemo samo da pretpostavimo ne i da dokažemo.
+
+### Kolona gender
+```{r}
+ggplot(dataset) +
+  geom_bar(aes(x=gender, fill=wealthLevel), position = "dodge")+labs(title = "Raspodela milijardera na osnovu pola",
+       x = "Pol milijardera",
+       y = "Broj milijardera") +
+  scale_fill_manual(
+    name = "",  
+    values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  
+  )
+```
+Na osnovu pola milijardera, uočavamo da muškarci dominiraju, dok je broj žena milijardera veoma mali. Razlozi mogu biti razni, od toga da su tokom većeg dela istorije društva bila patrijarhalna dajući muškarcima privilegije u obrazovanju, resursima, poslovnim prilikama, uspostavljanju novih kontakta do diskriminacije žena na radnom mestu i sputavanja žena za veći napredak u karijeri. 
+
+
+```{r}
+ggplot(dataset) +
+  geom_bar(aes(x=industries, fill=gender), position = "dodge") +labs(title = "Raspodela milijardera prema industrijama",
+       x = "Industrije",
+       y = "Broj milijardera") +
+  guides(fill=guide_legend(title="Pol")) +
+  coord_flip()
+```
+Kada analiziramo zastupljenost polova u različitim industrijama, primećujemo da je najveći broj muškaraca zastupljen u kategorijama poput tehnologije, proizvodnje, finansija i investicija, kao i mode. Takođe, možemo uočiti da su žene vrlo slabo zastupljene u industrijama poput telekomunikacija i kockanja i kazina.
+
+#### Ostale kolone
+Kolone koje predstavljaju finansijske podatke: 
+
+1. cpi_country
+2. cpi_change_country
+3. gdp_country
+4. gdp_per_capita
+5. tax_revenue_country_country
+6. total_tax_rate_country
+
+Finansijski podaci se obično predstavljaju korišćenjem vremenskih serija. S obzirom na podatke koje možemo pronaći u našem datasetu, jasno je da su oni vezani samo za jednu godinu pa samim tim nisu relevantni za prikazivanje na graficima. 
+
+Kolone koje se odnose na obrazovne podatke:
+
+1. gross_primary_education_enrollment_country
+2. gross_tertiary_education_enrollment
+
+Milijarderi dolaze iz razvijenih zemalja gde je osnovno obrazovanje obavezno, a više obrazovanje je široko rasprostranjeno i podrazumeva se.    
+
+```{r}
+ggplot(dataset) + 
+  geom_point(aes(x=gross_tertiary_education_enrollment, y=gdp_per_capita))
+```
+Nakon uklanjanja nekoliko izuzetaka, zaključujemo da postoji nelinearna veza između ove dve promenljive. To ukazuje na to da što je država ekonomski razvijenija, to je verovatnije da će obrazovanje biti bolje, a više ljudi će imati pristup tercijarnom obrazovanju. Iz toga proizlazi i veća verovatnoća da će milijarderi biti visoko obrazovani, što bi im omogućilo sticanje veština, znanja i drugih resursa potrebnih za akumulaciju bogatstva.
+
+# Selekcija obeležja (Feature selection)
+
+U ovom koraku ćemo se posvetiti izborom odgovarajućih obeležja pomoću kojih ćemo predviđati **wealthLevel** kolonu. 
+
+Za izbor kategorijskih obeležja koritićemo ANOVA test. ANOVA (Analysis of Variance) je statistička metoda koja se koristi za analizu razlika između srednjih vrednosti više grupa. Ova tehnika nam omogućava da utvrdimo da li postoji značajna varijacija između grupa podataka i da identifikujemo koje grupe doprinose toj varijaciji. 
+
+Nulta hipoteza u kontekstu ANOVA testa tvrdi da ne postoji statistički značajna razlika između srednjih vrednosti ispitivanih grupa, sugerišući da bilo kakve uočene razlike mogu biti rezultat slučajnosti ili varijacija unutar uzoraka. 
+```{r}
+categorical_features <- subset(dataset, select=c("country", "city", "industries", "status", "gender", "economic_group", "age_group", "wealthLevel"))
+
+anova_model <- lm(as.numeric(wealthLevel) ~ ., categorical_features)
+anova(anova_model)
+```
+Protumačićemo značajnost kodova kao i ostalih parametara kako bi videli koja kategorijska obeležja imaju uticaj na kolonu **wealthLevel**.
+
+F-vrednost meri varijaciju između grupa u odnosu na varijaciju unutar grupa (veća f vrednost ukazuje na veću verovatnoću znacajnih razlika). Vidimo da jedino obeležje **status** ima veliku F-vrednost.
+
+P-vrednosti pored F-vrednosti pružaju informaciju o statističkoj značajnosti rezultata. Niski p-vrednosti ukazuju na statistički značajne rezultate. Koristićemo **prag p <= 0.05** kako bismo uzeli u obzir da obeležje ima određenog uticaja. 
+
+Opet vidimo da se obeležje **status** izdvaja sa veoma niskom p vrednošću što govori da ovo obeležje ima uticaja na obeležje **wealthLevel**. Takođe **industrija** ima manju p vrednost od praga tako da i nju možemo smatrati uticajnom. 
+
+Obeležje **city** ima veću p vrednost od praga ali vidimo i da ima 671 različitih gradova. U nastavku možemo grupisati gradove kako bismo smanjili broj kategorija i ponovo proveriti da li će se nešto promeniti vezano za ovo obeležje. 
+
+Na osnovu ove analize odbacujemo nultu hipotezu za obeležja **status** i **industries** i njih ćemo koristiti u nastavku za predikciju obeležja **wealthLevel**. 
+
+Prelazimo na numerička obeležja. Koristićemo korelacionu matricu kako bismo utvrdili da li postoji korelacija između obeležja **wealthLevel** i ostalih.
+
+```{r}
+library(corrplot)
+numerical_features <- subset(dataset, select = c("finalWorth", "log_finalWorth", "age", "cpi_country", "cpi_change_country", "gdp_country", "gross_tertiary_education_enrollment", "gross_primary_education_enrollment_country", "life_expectancy_country", "tax_revenue_country_country", "total_tax_rate_country", "population_country", "gdp_per_capita", "wealthLevel", "selfMade"))
+
+new_column_names <- c("finalWorth", "log_finalWorth", "age", "cpi", "cpi_change", "gdp", "tertiary_education", "primary_education", "life_expectancy", "tax_revenue", "total_tax_rate", "population", "gdp_per_capita", "wealthLevel", "selfMade")
+
+numerical_features$wealthLevel <- as.numeric(dataset$wealthLevel)
+names(numerical_features) <- new_column_names
+cor_matrix <- cor(numerical_features)
+
+corrplot(cor_matrix, method="number", number.cex = 0.5)
+```
+Primećujemo da obeležje **finalWorth** ima korelaciju od 0.64 što znaci da ima određeni uticaj na obeležje koje predviđamo(kolona log_finalWorth je ista samo skalirana).
+
+### Spearmanov rang-korelacije
+Spearmanov rang-korelacijski koeficijent je neparametarska mera koja procenjuje veze između podataka bez pretpostavki o raspodeli podataka. Osobine Spearmanovog rang-korelacije: 
+
+1. Ne pretpostavlja linearnu vezu i može zabeležiti monotone odnose (rastuće ili opadajuće).
+2. Uključuje rangiranje podataka pre nego što se izračuna korelacija.
+3. Manje je osetljiv na odstupanja (izuzetke).
+4. Ne pretpostavlja da podaci prate određenu distribuciju.
+
+```{r}
+y <- numerical_features$wealthLevel
+
+numerical_features$selfMade <- as.numeric(numerical_features$selfMade)
+for(col in names(numerical_features)){
+  result <- cor.test(numerical_features[[col]], y, method = "spearman")
+  
+  cat("\nColumn:", col, "\n")
+  print(result)
+  cat("\n")
+}
+```
+
+Tumačenje rezultata:
+
+Pozitivan rho ukazuje na pozitivnu vezu, što znači da rast jedne promenljive prati rast druge, dok negativan rho ukazuje na to da rast jedne promenljive prati pad druge. Vrednosti bliske nuli sugerišu na odsustvo značajne veze. 
+
+P-vrednost izražava verovatnoću da odsustvo korelacije bude odbačeno kada je nulta hipoteza tačna. Ako je p-vrednost mala (obično manja od 0.05), smatramo da postoji statistički značajna korelacija.
+
+Za kolone **finalWorth** i **log_finalWorth** primećujemo male p-vrednosti i pozitivnu korelaciju sa **wealthLevel**, ukazujući na značajnu pozitivnu vezu. 
+
+Kolona **age** ima slabu, ali statistički značajnu, pozitivnu vezu sa **wealthLevel**. Takođe, kolona **gdp_per_capita** ima p-vrednost od 0.038, što je manje od praga, čineći je relevantnom za dalju analizu.
+
+Ostale kolone imaju vrlo male pozitivne ili negativne vrednosti za rho i p-vrednosti veće od praga, pa ih ne smatramo značajnim za dalje razmatranje u kontekstu veze sa 'wealthLevel'.
+
+Pošto imamo veliki broj industrija srodne industrije ćemo grupisati u opšti tip.
+```{r}
+data <- subset(dataset, select = c("gdp_per_capita","age","status","industries","wealthLevel"))
+
+data$industries[data$industries %in% c("Fashion & Retail", "Food & Beverage", "Gambling & Casinos", "Media & Entertainment", "Sports")] <- "Consumer Goods and Services"
+
+data$industries[data$industries %in% c("Diversified")] <- "Diversified"
+
+data$industries[data$industries %in% c("Technology", "Telecom")] <- "Technology"
+data$industries[data$industries %in% c("Automotive", "Logistics")] <- "Automotive and Transportation"
+
+data$industries[data$industries %in% c("Manufacturing", "Construction & Engineering")] <- "Manufacturing and Construction"
+
+data$industries[data$industries %in% c("Metals & Mining", "Energy")] <- "Natural Resources and Energy"
+```
+
+
+```{r}
+data$gdp_per_capita <- log(data$gdp_per_capita)
+
+data$status <- as.factor(data$status)
+data$industries <- as.factor(data$industries)
+head(data)
+```
+
+#### Podela skupa podataka na train i test skup
+
+Podelićemo podatke u skup za treniranje i testiranje. Koristićemo odnos 80% podataka za trening skup i 20% za test skup.
+
+```{r}
+set.seed(123)
+
+sample_size = floor(0.80*nrow(data))
+
+train_ind = sample(seq_len(nrow(data)), size = sample_size)
+train = data[train_ind,]
+test = data[-train_ind,]
+```
+
+
+```{r}
+ggplot(train) +
+  geom_bar(aes(x = factor(wealthLevel), fill = factor(wealthLevel))) +
+  labs(title = "Raspodela bogatstva milijardera na trening skupu",
+       x = "Nivo bogatstva",
+       y = "Broj milijardera") +
+  scale_fill_manual(
+    name = "",  
+    values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  
+  )
+
+```
+```{r}
+prop.table(table(train$wealthLevel))
+```
+
+Dobijeni rezultat nam govori da imamo 93.08% milijardera koji pripadaju grupi bogatih i 0.07% milijardera koji pripadaju grupi ekstremno bogatih. Ovakva nejednakost u podacima nam govori da nas model "favorizuje" veću klasu zbog značajne većine podataka koja pripada toj klasi.
+
+
+# Analiza Oversampling-a, Undersampling-a i kombinovanog pristupa
+
+Želimo da istražimo koje metode balansiranja klasa možemo da primenimo u našem nebalansiranom skupu podataka kako bismo dobili najbolje rezultate.
+
+
+## Oversampling
+
+Oversampling je tehnika koja rešava problem nebalansiranih podataka povećavanjem broja instanci manjinske klase. Ovo pomaže modelu da se bolje prilagodi manjinskoj klasi.
+
+```{r}
+xtabs(~wealthLevel, train)
+```
+
+Promenljiva **wealthLevel** za klasu 0 (bogati) ima 1966 instanci, dok za klasu 1 (ekstremno bogatih) ima 146 instanci.
+Ovo ukazuje na nebalansiranost podatka gde klasa 0 ima veću zastupljenost u odnosu na klasu 1.
+
+
+```{r}
+actual_sample <-nrow(train)
+
+N<-max(2*1966,1000)
+oversampled_data <- ovun.sample(as.factor(wealthLevel) ~ ., data = train, method = "over", N = N, seed = 123)$data
+
+```
+
+
+```{r}
+ggplot(oversampled_data, aes(x = as.factor(wealthLevel), fill = as.factor(wealthLevel))) +
+  geom_bar() +
+  labs(title = "Raspodela bogatstva milijardera nakon Oversampling-a",
+       x = "Nivo bogatstva",
+       y = "Broj milijardera") +
+  scale_fill_manual(name = "", values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")) +
+  theme_minimal() 
+  
+```
+
+```{r}
+prop.table(table(oversampled_data$wealthLevel))
+```
+
+Nakon primene Oversampling metode na našim nebalansiranim podacima, zapažamo poboljšanje raspodele. Sada uočavamo da imamo jednaku raspodelu klasa.
+
+
+### Undersampling
+Za razliku od Oversampling-a, Undersampling smanjuje broj instanci većinske klase u skupu podataka kako bi se postigla bolja ravnoteža između klasa, često korišćen u situacijama nebalansiranih klasifikacionih problema.
+
+```{r}
+undersampled_data <- ovun.sample(wealthLevel ~ ., data = train, method = "under", N = 2*146, seed = 123)
+undersampled_data <- undersampled_data$data
+```
+
+```{r}
+xtabs(~wealthLevel, undersampled_data)
+```
+
+```{r}
+ggplot(undersampled_data, aes(x = factor(wealthLevel), fill = factor(wealthLevel))) +
+  geom_bar() +
+  labs(title = "Raspodela bogatstva milijardera nakon Undersampling-a",
+       x = "Nivo bogatstva",
+       y = "Broj milijardera") +
+  scale_fill_manual(name = "", values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  ) +
+  theme_minimal() 
+```
+
+```{r}
+prop.table(table(undersampled_data$wealthLevel))
+```
+
+Nakon primene Undersampling metode postigli smo jednaku raspodelu instanci za obe klase.
+
+
+### Kombinacija Oversamplinga i Undersamplinga
+
+```{r}
+minory_class_count <- sum(train$wealthLevel == 1)
+majority_class_count <- sum(train$wealthLevel == 0)
+
+N_both <- max(2*minory_class_count, majority_class_count) 
+both = ovun.sample(wealthLevel~.,data = train, method="both",  N = N_both, seed = 123)$data
+
+both <- both %>%
+  mutate(wealthLevel = ifelse(wealthLevel == 1, 1, 0))
+
+
+```
+
+```{r}
+xtabs(~wealthLevel, both)
+```
+Primenom kombinacije Oversampling-a i Undersampling-a uviđamo da za klasu 0 (bogatih) imamo 989 instanci, dok za klasu 1 (ekstremno bogatih) imamo 977 instanci.
+
+```{r}
+ggplot(both, aes(x = factor(wealthLevel), fill = factor(wealthLevel))) +
+  geom_bar() +
+  labs(title = "Raspodela bogatstva milijardera nakon kombinacije",
+       x = "Nivo bogatstva",
+       y = "Broj milijardera") +
+  scale_fill_manual(name = "", values = c("0" = "#00bfc4", "1" = "#f8766d"),  
+    labels = c("0" = "Bogati", "1" = "Ekstremno bogati")  ) +
+  theme_minimal() 
+```
+
+```{r}
+oversampled_data$wealthLevel <- as.numeric(oversampled_data$wealthLevel)
+undersampled_data$wealthLevel <- as.numeric(undersampled_data$wealthLevel)
+both$wealthLevel <- as.numeric(both$wealthLevel)
+```
+
+
+# ROC
+Kako bismo izmerili performanse naših modela (oversampled_data, undersampled_data, both) klasifikacije, želeći da utvrdimo odnos između stope lažno pozitivnih rezultata i stope istinito pozitivnih rezultata.
+
+```{r}
+tree.over <- rpart(wealthLevel ~ ., data = oversampled_data)
+tree.under <-  rpart(wealthLevel ~ ., data = undersampled_data)
+tree.both <- rpart(wealthLevel ~ . , data = both)
+
+predict_over <- predict(tree.over, newdata = test)
+predict_under <- predict(tree.under, newdata = test)
+predict_both <- predict(tree.both, newdata = test)
+
+# predicted_class_both <- ifelse(predict_both[,"1"] > 0.5, 1, 0)
+
+roc_over <- roc(test$wealthLevel, predict_over)
+roc_under <- roc(test$wealthLevel, predict_under)
+roc_both <- roc(test$wealthLevel, predict_both)
+
+
+plot(roc_over, col = "blue", main = "ROC Curve Comparison")
+lines(roc_under, col = "green")
+lines(roc_both, col="red")
+```
+```{r}
+auc_over <- auc(roc_over)
+auc_under <- auc(roc_under)
+auc_both <- auc(roc_both)
+
+auc_over
+auc_under
+auc_both
+```
+Primećujemo da najbolji rezultat daje undersampling. Međutim zbog same strukture skupa podataka koji broji 2640 observacija undersampling će smanjiti broj observacija i samim tim dovesti do gubljenja pojedinih bitnih informacija. U nastavku fokus će nam biti na oversampling-u i kombinaciji undersampling i oversampling-a.
+
+# Izbor modela mašinskog učenja
+
+Da bismo procenili performanse našeg modela, primenićemo različite tehnike, uključujući Random Forest, logističku regresiju i Decision Tree na oversampled_data i both skupovima podataka koje smo izabrali kao modele.
+
+## Kombinacija oversampling i undersampling metode(both)
+```{r}
+set.seed(123)
+both$wealthLevel <- as.factor(both$wealthLevel)
+sample_size = floor(0.80*nrow(both))
+
+train_ind = sample(seq_len(nrow(both)), size = sample_size)
+train_both = both[train_ind,]
+test_both = both[-train_ind,]
+
+```
+
+#### Random Forest
+
+Random Forest je algoritam mašinskog učenja koji se koristi za klasifikaciju. On se konstruiše kombinovanjem više stabala odlučivanja tokom treninga, a zatim kombinuje njihova predviđanja prilikom donošenja konačne odluke.
+
+Izabrali smo Random Forest kao tehniku mašinskog učenja zbog njegove otpornosti na izuzetke, overfitovanje i primene u klasifikaciji. 
+```{r}
+set.seed(123)
+ntree <- 100
+
+rf_model <- randomForest(wealthLevel ~ ., data = train_both, ntree = ntree)
+predictions <- predict(rf_model, newdata = test_both)
+predictions_class <- as.factor(ifelse(predictions > 0.5, 1, 0))
+
+confusion_matrix_both_rf<- confusionMatrix(predictions,test_both$wealthLevel)
+print(confusion_matrix_both_rf)
+```
+
+
+```{r}
+accuracy_both_rf <- confusion_matrix_both_rf$overall['Accuracy']
+F1_both_rf <- confusion_matrix_both_rf$byClass['F1']
+precision_both_rf <- confusion_matrix_both_rf$byClass['Precision']
+recall_both_rf <- confusion_matrix_both_rf$byClass['Recall']
+
+result_both_rf <- data.frame(
+  Metric = c("Accuracy", "Precision", "Recall", "F1 Score"),
+  Value = c(accuracy_both_rf, precision_both_rf,recall_both_rf, F1_both_rf)
+)
+print(result_both_rf)
+```
+
+Tumačenje rezultata:
+
+- Accuracy: 91.09% predstavlja procenat ispravno klasifikovanih instanci u odnosu na ukupan broj instanci. Visoka tačnost ukazuje na sposobnost modela da pravilno klasifikuje instance.
+
+- Precision: 1.0000 znači da kada model predviđa pozitivnu klasu, uvek je u pravu, bez lažno pozitivnih predikcija.
+
+- Recall: 81.65% predstavlja udeo tačno identifikovanih pozitivnih instanci u odnosu na sve stvarne pozitivne instance.
+
+- F1 Score: 89.90% je harmonijska sredina između preciznosti i osetljivosti. Visok F1 ukazuje na dobru ravnotežu između preciznosti i osetljivosti.
+
+Rezultati nam sugeriraju da je model efikasan u opštem predviđanju klasa s visokom preciznošću za pozitivnu klasu. Osetljivost je nešto niža, što ukazuje da postoji prostor za poboljšanje u prepoznavanju stvarnih pozitivnih instanci.
+
+#### Logistička regresija
+
+Logistička regresija se često koristi u zadacima binarne klasifikacije, gde je suština predviđanje pripadnosti instanci jednoj od dve klase. Model je koristan kada imamo manji skup podataka jer se dobro skalira i može dati dobre rezultate.
+
+Iako logistička regresija nije otporna na izuzetke kao što je Random Forest, odlučili smo da je primenimo kako bismo istražili rezultate i uporedili ih.
+```{r}
+both_logit = glm(wealthLevel ~.,data=train_both, family="binomial")
+summary(both_logit)
+```
+
+```{r}
+both_predict = predict(both_logit,newdata = test_both, type = "response")
+both_predict = as.factor(ifelse(both_predict >= 0.50,1,0))
+
+confusionMatrix_both_log <- confusionMatrix(test_both$wealthLevel, both_predict)
+
+print(confusionMatrix_both_log)
+```
+
+```{r}
+accuracy_both_log <- confusionMatrix_both_log$overall['Accuracy']
+
+F1_both_log <- confusionMatrix_both_log$byClass['F1']
+
+precision_both_log <- confusionMatrix_both_log$byClass['Precision']
+
+recall_both_log <- confusionMatrix_both_log$byClass['Recall']
+
+result_both_log <- data.frame(
+  Metric = c("Accuracy", "Precision", "Recall", "F1 Score"),
+  Value = c(accuracy_both_log, precision_both_log,recall_both_log, F1_both_log)
+)
+print(result_both_log)
+```
+Tumačenje rezultata:
+
+- Accuracy: 61.46% predstavlja procenat ispravno klasifikovanih instanci u odnosu na ukupan broj instanci.
+
+- Precision: 0.5000 znači da model ima 50% preciznosti u predviđanju pozitivne klase.
+
+- Recall: 63.01% predstavlja udeo tačno identifikovanih pozitivnih instanci u odnosu na sve stvarne pozitivne instance. Znači da naš model ima 63.01% sposobnost da prepozna stvarne pozitivne instance.
+
+- F1 Score: 55.75% je harmonijska sredina između preciznosti i osetljivosti. Rezultati nam ukazuju na srednju tačnost i preciznost uz dobru sposobnost prepoznavanja stvarno pozitivnih instanci.
+
+U poređenju sa rezultatima koje nam je dao Random Forest, možemo da uočimo značajne razlike između ova dva modela. Random Forest nam je dao mnogo bolje rezultate od Logističke regresije zbog njegove otpornosti na izuzetke i može se bolje nositi sa neuravnoteženim klasama, dok je Logistička regresija podložna izuzecima i pokazuje svoje slabosti u slučaju neuravnoteženih klasa.
+
+#### Stablo odlučivanja
+
+Decision Tree (Stablo odlučivanja) je algoritam mašinskog učenja koji se često koristi za klasifikaciju. Ovaj model je jednostavan za interpretaciju jer se može predstaviti u obliku hijerarhijske strukture čvorova, gde svaki čvor predstavlja testiranje atributa. Odlučili smo se da isprobamo i ovu tehniku jer je otporan na outliere.
+
+```{r}
+tree_model <- rpart(wealthLevel ~ ., data = train_both, method = "class")
+
+predicted_classes <- predict(tree_model, newdata = test_both, type = "class")
+
+confusionMatrix_both_dt <- confusionMatrix(test_both$wealthLevel,predicted_classes)
+print(confusionMatrix_both_dt)
+```
+
+```{r}
+accuracy_both_dt <- confusionMatrix_both_dt$overall['Accuracy']
+
+F1_both_dt <- confusionMatrix_both_dt$byClass['F1']
+
+precision_both_dt <- confusionMatrix_both_dt$byClass['Precision']
+
+recall_both_dt <- confusionMatrix_both_dt$byClass['Recall']
+
+result_both_dt <- data.frame(
+  Metric = c("Accuracy", "Precision", "Recall", "F1 Score"),
+  Value = c(accuracy_both_dt, precision_both_dt,recall_both_dt, F1_both_dt)
+)
+print(result_both_dt)
+```
+Tumačenje rezultata:
+
+- Accuracy (Tačnost): 66.14% predstavlja procenat ispravno klasifikovanih instanci u odnosu na ukupan broj instanci.
+
+- Precision (Preciznost): 40.36 znači da model ima manje od 50% preciznosti u predviđanju pozitivne klase.
+
+- Recall (Osetljivost): 80.00% predstavlja udeo tačno identifikovanih pozitivnih instanci u odnosu na sve stvarne pozitivne instance. Znači da naš model ima 80.00% sposobnost da prepozna stvarne pozitivne instance.
+
+- F1 Score: 53.65% je harmonijska sredina između preciznosti i osetljivosti.
+
+Na osnovu dobijenih rezultata uočavamo da je Decision Tree dao malo bolje rezultate za Accuracy, Recall i F1, ali je dao lošiji rezultat za Precision u odnosu na Logističku regresiju.
+
+Model koji smo dobili korišćenjem Random Forest-a dao je najbolje rezultate.
+
+U nastavku želimo da se pozabavimo modelom koji smo dobili primenom Oversampling-a i razmotrimo kakve rezultate dobijamo u odnosu na primenu kombinacije Oversampling-a i Undersampling-a.
+
+## Oversampling
+```{r}
+set.seed(123)
+oversampled_data$wealthLevel <- 
+oversampled_data$wealthLevel <- as.factor(ifelse(oversampled_data$wealthLevel == 2, 1, 0))
+
+sample_size = floor(0.80*nrow(oversampled_data))
+train_ind = sample(seq_len(nrow(oversampled_data)), size = sample_size)
+train_over = oversampled_data[train_ind,]
+test_over = oversampled_data[-train_ind,]
+
+
+```
+
+#### Random forest
+
+```{r}
+set.seed(123)
+ntree <- 100
+rf_model <- randomForest(as.factor(wealthLevel) ~ ., data = train_over, ntree = ntree)
+predictions <- predict(rf_model, newdata = test_over)
+predictions_class <- as.factor(ifelse(predictions > 0.5, 1, 0))
+
+confusion_matrix_over_rf <- confusionMatrix(predictions,test_over$wealthLevel)
+print(confusion_matrix_over_rf)
+
+```
+```{r}
+accuracy_over_rf <- confusion_matrix_over_rf$overall['Accuracy']
+
+F1_over_rf <- confusion_matrix_over_rf$byClass['F1']
+
+precision_over_rf <- confusion_matrix_over_rf$byClass['Precision']
+
+recall_over_rf <- confusion_matrix_over_rf$byClass['Recall']
+
+result_over_rf <- data.frame(
+  Metric = c("Accuracy - Over", "Precision - Over", "Recall - Over", "F1 Score - Over", "Accuracy - Both", "Precision - Both", "Recall - Both", "F1 Score - Both"),
+  Value = c(accuracy_over_rf, precision_over_rf,recall_over_rf, F1_over_rf, accuracy_both_rf, precision_both_rf, recall_both_rf, F1_both_rf)
+)
+print(result_over_rf)
+```
+
+Tumačenje rezultata primene Random Forest-a na Oversampling i Kombinacije Oversamplinga i Undersamplinga:
+
+- Accuracy: 91.12% predstavlja procenat ispravno klasifikovanih instanci u odnosu na ukupan broj instanci. Primećujemo da je Accuracy približno isti kada posmatramo ova dva modela, oko 91%.
+
+- Precision: 1.0000 znači da model tačno predviđa sve pozitivne instance. Istu vrednost smo dobili i za model koji je koristio kombinaciju undersamplinga i oversamplinga.
+
+- Recall: 82.12% predstavlja udeo tačno identifikovanih pozitivnih instanci u odnosu na sve stvarne pozitivne instance. Takođe, uviđamo da je predviđanje oba modela oko 82%, nema značajne razlike u poređenju.
+
+- F1 Score: 90.18% je harmonijska sredina između preciznosti i osetljivosti. Možemo uočiti veoma sitnu razliku u rezultatima, gde za model primenom oversampling metode dobijamo malo poboljšanje koje nije značajno.
+
+
+#### Logistička regresija
+```{r}
+over_logit = glm(wealthLevel ~.,data=train_over, family="binomial")
+summary(over_logit)
+```
+
+```{r}
+over_predict = predict(over_logit,newdata = test_over, type = "response")
+over_predict = as.factor(ifelse(over_predict >= 0.50,1,0))
+
+confusion_matrix_over_log<-confusionMatrix(test_over$wealthLevel, over_predict)
+```
+
+```{r}
+accuracy_over_log <- confusion_matrix_over_log$overall['Accuracy']
+
+F1_over_log <- confusion_matrix_over_log$byClass['F1']
+
+precision_over_log <- confusion_matrix_over_log$byClass['Precision']
+
+recall_over_log <- confusion_matrix_over_log$byClass['Recall']
+
+result_over_log <- data.frame(
+  Metric = c("Accuracy - Over", "Precision - Over", "Recall - Over", "F1 Score - Over", "Accuracy - Both", "Precision - Both", "Recall - Both", "F1 Score - Both"),
+  Value = c(accuracy_over_log, precision_over_log,recall_over_log, F1_over_log, accuracy_both_log, precision_both_log, recall_both_log, F1_both_log)
+)
+print(result_over_log)
+```
+Tumačenje rezultata primene Logistic Regression na Oversampling i Kombinacije Oversamplinga i Undersamplinga:
+
+- Accuracy: 63.78%, uviđamo da je rezultat malo bolji od rezultata koji smo dobili za model Both (Kombinacija Oversamplinga i Undersamplinga).
+
+- Precision: 55.95% je takođe malo bolja u odnosu na model Both, što znači da će nam model sa Oversampling-om dati bolju tačnost za predviđanja pozitivnih instanci.
+
+- Recall: 65.25%, takođe dobijamo malo bolji rezultat od modela Both, što znači da će Oversampling bolje identifikovati pozitivne instance.
+
+- F1 Score: 55.95%, možemo uočiti da rezultat za F1 između modela nema značajnih razlika.
+
+Primena Oversampling-a na Logističku regresiju je rezultirala malim poboljšanjem u odnosu na model koji koristi kombinaciju Oversampling-a i Undersampling-a.
+
+#### Stablo odlučivanja
+
+```{r}
+tree_model <- rpart(wealthLevel ~ ., data = train_over, method = "class")
+
+predicted_classes <- predict(tree_model, newdata = test_over, type = "class")
+
+confusion_matrix_over_dt<-confusionMatrix(test_over$wealthLevel,predicted_classes)
+```
+
+```{r}
+accuracy_over_dt <- confusion_matrix_over_dt$overall['Accuracy']
+
+F1_over_dt <- confusion_matrix_over_dt$byClass['F1']
+
+precision_over_dt <- confusion_matrix_over_dt$byClass['Precision']
+
+recall_over_dt <- confusion_matrix_over_dt$byClass['Recall']
+
+result_over_dt <- data.frame(
+  Metric = c("Accuracy - Over", "Precision - Over", "Recall - Over", "F1 Score - Over", "Accuracy - Both", "Precision - Both", "Recall - Both", "F1 Score - Both"),
+  Value = c(accuracy_over_dt, precision_over_dt,recall_over_dt, F1_over_dt, accuracy_both_dt, precision_both_dt, recall_both_dt, F1_both_dt)
+)
+print(result_over_dt)
+```
+
+Tumačenje rezultata primene Decision Tree na Oversampling i Kombinacije Oversamplinga i Undersamplinga:
+
+- Accuracy: 64.54%, uočavamo da je rezultat malo lošiji od rezultata koji smo dobili za model Both (Kombinacija Oversamplinga i Undersamplinga), ali nema značajnih razlika.
+
+- Precision: 42.48% je u oba slučaja ispod 50%, što znači da naši modeli nisu dobri u predviđanju tačnih pozitivnih instanci.
+
+- Recall: 74.20%, uviđamo da je model lošiji u identifikaciji pozitivnih instanci u odnosu na Both.
+
+- F1 Score: 54.03%, možemo uočiti da rezultat za F1 kod oba modela ne daje značajnu razliku.
+
+Primena Decision Tree na model dobijen Oversampling-om ne pokazuje poboljšanje u odnosu na model dobijen Kombinacijom Oversampling-a i Undersampling-a. 
+
+# Zaključak
+
+Najbolje rezultate smo postigli primenom Random Forest-a na podatke koji su dobijeni kombinacijom Oversampling-a i Undersampling-a. Nema znatne razlike u dobijenim rezultatima nad podacima dobijenim primenom samo Oversampling-a. Međutim, podaci dobijeni kombinacijom Oversampling-a i Undersampling-a se mogu smatrati manje neregularnim. 
+
+Ovaj pristup tretira oba problema neuravnoteženosti podataka: povećava broj instanci manjinske klase (Oversampling) i smanjuje broj instanci većinske klase (Undersampling). Ovo može rezultirati pouzdanijim modelom, jer se bavi i neujednačenošću u distribuciji klasa.
+
+Ovi rezultati ukazuju na važnost kombinacije više tehnika resamplinga kako bi se postigla bolja ravnoteža u podacima, a samim tim i poboljšane performanse modela.
+
